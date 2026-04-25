@@ -2,43 +2,67 @@
 
 Small MCP server for a billing automation MVP.
 
-It exposes one tool called `billing_policy_check`.
+It exposes one MCP tool:
 
-The tool receives invoice fields and returns one deterministic decision: `SEPA_ALLOWED`, `DUNNING_ALLOWED`, or `BLOCKED`.
+- `billing_policy_check`
+
+The tool receives invoice fields and returns one deterministic billing decision:
+
+- `SEPA_ALLOWED`
+- `DUNNING_ALLOWED`
+- `BLOCKED`
 
 The Make.com workflow uses this MCP server as a hard policy gate before running invoice automation.
 
-The root page is only the default Next.js page. The actual MCP endpoint is:
+## Endpoint
 
-https://billing-policy-mcp.vercel.app/api/mcp
+`https://billing-policy-mcp.vercel.app/api/mcp`
+
+The root page is only the default Next.js page. The actual MCP server is the `/api/mcp` route.
 
 ## Policy logic
 
-SEPA is allowed when the payment method is `SEPA`, the amount is positive, a mandate ID exists, and a debtor IBAN exists.
+### SEPA allowed
 
-Dunning is allowed when the payment method is `INVOICE`, the amount is positive, and the invoice is at least 7 days overdue.
+SEPA is allowed when:
 
-Everything else returns `BLOCKED`.
+- payment method is `SEPA`
+- amount is positive
+- mandate ID exists
+- debtor IBAN exists
 
-## Example output
+### Dunning allowed
 
-{
-  "allowed": true,
-  "action": "SEPA_ALLOWED",
-  "risk_level": "low",
-  "rule_ids": ["SEPA_MANDATE_PRESENT", "IBAN_PRESENT", "AMOUNT_POSITIVE"],
-  "reason": "SEPA collection is allowed because mandate and debtor account data are present."
-}
+Dunning is allowed when:
+
+- payment method is `INVOICE`
+- amount is positive
+- invoice is at least 7 days overdue
+
+### Blocked
+
+Everything else returns:
+
+- `BLOCKED`
+
+## Example tool output
+
+    {
+      "allowed": true,
+      "action": "SEPA_ALLOWED",
+      "risk_level": "low",
+      "rule_ids": ["SEPA_MANDATE_PRESENT", "IBAN_PRESENT", "AMOUNT_POSITIVE"],
+      "reason": "SEPA collection is allowed because mandate and debtor account data are present."
+    }
 
 ## Run locally
 
-npm install
-
-npm run dev
+    npm install
+    npm run dev
 
 ## Build
 
-npm run build
+    npm run build
 
 ## Note
 
