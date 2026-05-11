@@ -8,6 +8,7 @@ const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID!;
 const AIRTABLE_INVOICE_TABLE = process.env.AIRTABLE_INVOICE_TABLE!;
 const AIRTABLE_AUDIT_TABLE = process.env.AIRTABLE_AUDIT_TABLE!;
 const AIRTABLE_REVIEW_TABLE = process.env.AIRTABLE_REVIEW_TABLE!;
+const AIRTABLE_ALIGNMENT_TABLE = process.env.AIRTABLE_ALIGNMENT_TABLE!;
 
 async function findRecordIdByFormula(table: string, formulaRaw: string) {
   const formula = encodeURIComponent(formulaRaw);
@@ -102,6 +103,22 @@ async function upsertManualReviewByInvoiceId(
   return createRecord(AIRTABLE_REVIEW_TABLE, fields);
 }
 
+async function upsertAlignmentByInvoiceId(
+  invoiceId: string,
+  fields: Record<string, unknown>
+) {
+  const recordId = await findRecordIdByFormula(
+    AIRTABLE_ALIGNMENT_TABLE,
+    `{Invoice} = "${invoiceId}"`
+  );
+
+  if (recordId) {
+    return updateRecord(AIRTABLE_ALIGNMENT_TABLE, recordId, fields);
+  }
+
+  return createRecord(AIRTABLE_ALIGNMENT_TABLE, fields);
+}
+
 const handler = createMcpHandler(
   (server) => {
     server.tool(
@@ -186,6 +203,14 @@ const handler = createMcpHandler(
             review_status: "OPEN",
             created_at: new Date().toISOString(),
           });
+
+          await upsertAlignmentByInvoiceId(input.invoice_id, {
+            Invoice: input.invoice_id,
+            "AI intent": input.requested_action,
+            "MCP/result": "BLOCKED",
+            "Airtable result": "stays OVERDUE, no XML, manual review case",
+            Alignment: "Correct",
+          });
         }
 
         const result = {
@@ -224,6 +249,14 @@ const handler = createMcpHandler(
           invoice_id: input.invoice_id,
           SEPA_XML: input.sepa_xml,
           status: "SEPA_XML_READY",
+        });
+
+        await upsertAlignmentByInvoiceId(input.invoice_id, {
+          Invoice: input.invoice_id,
+          "AI intent": "SEPA",
+          "MCP/result": "SEPA_ALLOWED",
+          "Airtable result": "SEPA_XML_READY + XML stored",
+          Alignment: "Correct",
         });
 
         const result = {
@@ -271,6 +304,14 @@ const handler = createMcpHandler(
           old_dunning_level: input.old_dunning_level,
           new_dunning_level: newDunningLevel,
           timestamp: new Date().toISOString(),
+        });
+
+        await upsertAlignmentByInvoiceId(input.invoice_id, {
+          Invoice: input.invoice_id,
+          "AI intent": "DUNNING",
+          "MCP/result": "DUNNING_ALLOWED / email sent",
+          "Airtable result": `DUNNING_EMAIL_SENT, level ${input.old_dunning_level} → ${newDunningLevel}`,
+          Alignment: "Correct",
         });
 
         const result = {
