@@ -6,6 +6,7 @@ type Action = "SEPA_ALLOWED" | "DUNNING_ALLOWED" | "BLOCKED";
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN!;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID!;
 const AIRTABLE_INVOICE_TABLE = process.env.AIRTABLE_INVOICE_TABLE!;
+const AIRTABLE_AUDIT_TABLE = process.env.AIRTABLE_AUDIT_TABLE!;
 
 async function findInvoiceRecordId(invoiceId: string) {
   const formula = encodeURIComponent(`{invoice_id} = "${invoiceId}"`);
@@ -27,9 +28,9 @@ async function findInvoiceRecordId(invoiceId: string) {
   return data.records?.[0]?.id || null;
 }
 
-async function createInvoice(fields: Record<string, unknown>) {
+async function createRecord(table: string, fields: Record<string, unknown>) {
   const res = await fetch(
-    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_INVOICE_TABLE}`,
+    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}`,
     {
       method: "POST",
       headers: {
@@ -77,7 +78,7 @@ async function upsertInvoiceByInvoiceId(
     return updateInvoiceRecord(recordId, fields);
   }
 
-  return createInvoice(fields);
+  return createRecord(AIRTABLE_INVOICE_TABLE, fields);
 }
 
 const handler = createMcpHandler(
@@ -142,7 +143,7 @@ const handler = createMcpHandler(
           customer_email: input.customer_email,
           customer_name: input.customer_name,
           payment_method: input.payment_method,
-          status: input.payment_method === "SEPA" ? "OVERDUE" : "OVERDUE",
+          status: "OVERDUE",
           amount_eur: input.amount_eur,
           due_days_over: input.due_days_over,
           dunning_level: input.dunning_level,
@@ -196,6 +197,56 @@ const handler = createMcpHandler(
           sepa_xml_attached: true,
           executed_action: "SEPA_XML_ATTACHED",
           reason: "SEPA XML was stored in Airtable and the invoice was marked SEPA_XML_READY.",
+        };
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+          structuredContent: result,
+        };
+      }
+    );
+
+    server.tool(
+      "record_dispatch_outcome",
+      "Records that a dunning email was sent and increments the dunning level.",
+      {
+        run_id: z.string(),
+        airtable_record_id: z.string(),
+        invoice_id: z.string(),
+        outcome: z.string(),
+        recipient: z.string(),
+        old_dunning_level: z.number().int(),
+      },
+      async (input) => {
+        const newDunningLevel = input.old_dunning_level + 1;
+
+        await upsertInvoiceByInvoiceId(input.invoice_id, {
+          invoice_id: input.invoice_id,
+          status: "DUNNING_EMAIL_SENT",
+          dunning_level: newDunningLevel,
+        });
+
+        await createRecord(AIRTABLE_AUDIT_TABLE, {
+          run_id: input.run_id,
+          invoice_id: input.invoice_id,
+          executed_action: "DUNNING_EMAIL_SENT",
+          outcome: input.outcome,
+          recipient: input.recipient,
+          old_dunning_level: input.old_dunning_level,
+          new_dunning_level: newDunningLevel,
+          timestamp: new Date().toISOString(),
+        });
+
+        const result = {
+          run_id: input.run_id,
+          airtable_record_id: input.airtable_record_id,
+          invoice_id: input.invoice_id,
+          executed_action: "DUNNING_EMAIL_SENT",
+          outcome: input.outcome,
+          recipient: input.recipient,
+          old_dunning_level: input.old_dunning_level,
+          new_dunning_level: newDunningLevel,
+          reason: "Dunning email outcome was recorded and dunning level was incremented.",
         };
 
         return {
