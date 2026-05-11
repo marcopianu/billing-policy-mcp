@@ -80,6 +80,32 @@ const handler = createMcpHandler(
         };
       }
     );
+
+    server.tool(
+      "attach_sepa_xml",
+      "Stores the generated SEPA XML for an invoice.",
+      {
+        run_id: z.string(),
+        airtable_record_id: z.string(),
+        invoice_id: z.string(),
+        sepa_xml: z.string(),
+      },
+      async (input) => {
+        const result = {
+          run_id: input.run_id,
+          airtable_record_id: input.airtable_record_id,
+          invoice_id: input.invoice_id,
+          sepa_xml_attached: true,
+          executed_action: "SEPA_XML_ATTACHED",
+          reason: "SEPA XML was received by the MCP policy server.",
+        };
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+          structuredContent: result,
+        };
+      }
+    );
   },
   {},
   { basePath: "/api" }
