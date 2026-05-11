@@ -7,12 +7,13 @@ const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN!;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID!;
 const AIRTABLE_INVOICE_TABLE = process.env.AIRTABLE_INVOICE_TABLE!;
 const AIRTABLE_AUDIT_TABLE = process.env.AIRTABLE_AUDIT_TABLE!;
+const AIRTABLE_REVIEW_TABLE = process.env.AIRTABLE_REVIEW_TABLE!;
 
-async function findInvoiceRecordId(invoiceId: string) {
-  const formula = encodeURIComponent(`{invoice_id} = "${invoiceId}"`);
+async function findRecordIdByFormula(table: string, formulaRaw: string) {
+  const formula = encodeURIComponent(formulaRaw);
 
   const res = await fetch(
-    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_INVOICE_TABLE}?filterByFormula=${formula}`,
+    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}?filterByFormula=${formula}`,
     {
       headers: {
         Authorization: `Bearer ${AIRTABLE_TOKEN}`,
@@ -26,6 +27,10 @@ async function findInvoiceRecordId(invoiceId: string) {
 
   const data = await res.json();
   return data.records?.[0]?.id || null;
+}
+
+async function findInvoiceRecordId(invoiceId: string) {
+  return findRecordIdByFormula(AIRTABLE_INVOICE_TABLE, `{invoice_id} = "${invoiceId}"`);
 }
 
 async function createRecord(table: string, fields: Record<string, unknown>) {
@@ -48,9 +53,9 @@ async function createRecord(table: string, fields: Record<string, unknown>) {
   return res.json();
 }
 
-async function updateInvoiceRecord(recordId: string, fields: Record<string, unknown>) {
+async function updateRecord(table: string, recordId: string, fields: Record<string, unknown>) {
   const res = await fetch(
-    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_INVOICE_TABLE}/${recordId}`,
+    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}/${recordId}`,
     {
       method: "PATCH",
       headers: {
@@ -75,10 +80,26 @@ async function upsertInvoiceByInvoiceId(
   const recordId = await findInvoiceRecordId(invoiceId);
 
   if (recordId) {
-    return updateInvoiceRecord(recordId, fields);
+    return updateRecord(AIRTABLE_INVOICE_TABLE, recordId, fields);
   }
 
   return createRecord(AIRTABLE_INVOICE_TABLE, fields);
+}
+
+async function upsertManualReviewByInvoiceId(
+  invoiceId: string,
+  fields: Record<string, unknown>
+) {
+  const recordId = await findRecordIdByFormula(
+    AIRTABLE_REVIEW_TABLE,
+    `{invoice_id} = "${invoiceId}"`
+  );
+
+  if (recordId) {
+    return updateRecord(AIRTABLE_REVIEW_TABLE, recordId, fields);
+  }
+
+  return createRecord(AIRTABLE_REVIEW_TABLE, fields);
 }
 
 const handler = createMcpHandler(
@@ -151,6 +172,21 @@ const handler = createMcpHandler(
           debtor_iban: input.debtor_iban,
           debtor_bic: input.debtor_bic,
         });
+
+        if (action === "BLOCKED") {
+          await upsertManualReviewByInvoiceId(input.invoice_id, {
+            run_id: input.run_id,
+            invoice_id: input.invoice_id,
+            customer_email: input.customer_email,
+            customer_name: input.customer_name,
+            requested_action: input.requested_action,
+            executed_action: action,
+            reason,
+            rule_ids: rule_ids.join(", "),
+            review_status: "OPEN",
+            created_at: new Date().toISOString(),
+          });
+        }
 
         const result = {
           run_id: input.run_id,
