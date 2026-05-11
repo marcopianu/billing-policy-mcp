@@ -14,9 +14,8 @@ const handler = createMcpHandler(
         invoice_id: z.string(),
         customer_email: z.string(),
         customer_name: z.string(),
-        requested_action: z.enum(["SEPA", "DUNNING", "REVIEW"]),
-
-        payment_method: z.enum(["SEPA", "INVOICE"]),
+        requested_action: z.string(),
+        payment_method: z.string(),
         amount_eur: z.number(),
         due_days_over: z.number().int(),
         dunning_level: z.number().int(),
