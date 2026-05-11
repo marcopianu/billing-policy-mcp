@@ -7,8 +7,33 @@ const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN!;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID!;
 const AIRTABLE_INVOICE_TABLE = process.env.AIRTABLE_INVOICE_TABLE!;
 
-async function updateInvoice(recordId: string, fields: Record<string, unknown>) {
-  const res = await fetch(
+async function updateInvoiceByInvoiceId(
+  invoiceId: string,
+  fields: Record<string, unknown>
+) {
+  const formula = encodeURIComponent(`{invoice_id} = "${invoiceId}"`);
+
+  const searchRes = await fetch(
+    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_INVOICE_TABLE}?filterByFormula=${formula}`,
+    {
+      headers: {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+      },
+    }
+  );
+
+  if (!searchRes.ok) {
+    throw new Error(`Airtable lookup failed: ${await searchRes.text()}`);
+  }
+
+  const searchData = await searchRes.json();
+  const recordId = searchData.records?.[0]?.id;
+
+  if (!recordId) {
+    throw new Error(`No Airtable invoice found for invoice_id: ${invoiceId}`);
+  }
+
+  const updateRes = await fetch(
     `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_INVOICE_TABLE}/${recordId}`,
     {
       method: "PATCH",
@@ -20,11 +45,11 @@ async function updateInvoice(recordId: string, fields: Record<string, unknown>) 
     }
   );
 
-  if (!res.ok) {
-    throw new Error(`Airtable update failed: ${await res.text()}`);
+  if (!updateRes.ok) {
+    throw new Error(`Airtable update failed: ${await updateRes.text()}`);
   }
 
-  return res.json();
+  return updateRes.json();
 }
 
 const handler = createMcpHandler(
@@ -115,9 +140,9 @@ const handler = createMcpHandler(
         sepa_xml: z.string(),
       },
       async (input) => {
-        await updateInvoice(input.airtable_record_id, {
+        await updateInvoiceByInvoiceId(input.invoice_id, {
           SEPA_XML: input.sepa_xml,
-          Status: "SEPA_XML_READY",
+          status: "SEPA_XML_READY",
         });
 
         const result = {
