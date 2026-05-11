@@ -3,6 +3,30 @@ import { createMcpHandler } from "mcp-handler";
 
 type Action = "SEPA_ALLOWED" | "DUNNING_ALLOWED" | "BLOCKED";
 
+const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN!;
+const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID!;
+const AIRTABLE_INVOICE_TABLE = process.env.AIRTABLE_INVOICE_TABLE!;
+
+async function updateInvoice(recordId: string, fields: Record<string, unknown>) {
+  const res = await fetch(
+    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_INVOICE_TABLE}/${recordId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ fields }),
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error(`Airtable update failed: ${await res.text()}`);
+  }
+
+  return res.json();
+}
+
 const handler = createMcpHandler(
   (server) => {
     server.tool(
@@ -91,13 +115,18 @@ const handler = createMcpHandler(
         sepa_xml: z.string(),
       },
       async (input) => {
+        await updateInvoice(input.airtable_record_id, {
+          SEPA_XML: input.sepa_xml,
+          Status: "SEPA_XML_READY",
+        });
+
         const result = {
           run_id: input.run_id,
           airtable_record_id: input.airtable_record_id,
           invoice_id: input.invoice_id,
           sepa_xml_attached: true,
           executed_action: "SEPA_XML_ATTACHED",
-          reason: "SEPA XML was received by the MCP policy server.",
+          reason: "SEPA XML was stored in Airtable and the invoice was marked SEPA_XML_READY.",
         };
 
         return {
