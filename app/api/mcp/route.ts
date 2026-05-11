@@ -9,7 +9,13 @@ const handler = createMcpHandler(
       "billing_policy_check",
       "Checks whether an overdue invoice is allowed for SEPA collection, dunning, or manual review.",
       {
+        run_id: z.string(),
+        airtable_record_id: z.string(),
         invoice_id: z.string(),
+        customer_email: z.string(),
+        customer_name: z.string(),
+        requested_action: z.enum(["SEPA", "DUNNING", "REVIEW"]),
+
         payment_method: z.enum(["SEPA", "INVOICE"]),
         amount_eur: z.number(),
         due_days_over: z.number().int(),
@@ -55,6 +61,13 @@ const handler = createMcpHandler(
         }
 
         const result = {
+          run_id: input.run_id,
+          airtable_record_id: input.airtable_record_id,
+          invoice_id: input.invoice_id,
+          customer_email: input.customer_email,
+          customer_name: input.customer_name,
+          requested_action: input.requested_action,
+          executed_action: action,
           allowed,
           action,
           risk_level,
@@ -63,12 +76,7 @@ const handler = createMcpHandler(
         };
 
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result),
-            },
-          ],
+          content: [{ type: "text", text: JSON.stringify(result) }],
           structuredContent: result,
         };
       }
